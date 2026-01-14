@@ -152,6 +152,8 @@ def predict_pause_structures(
     device: Optional[str] = None,
     context_override: Optional[int] = None,
     progress_cb: Optional[ProgressCB] = None,
+    ring_spec: Optional[dict] = None,
+    ring_emit_every: Optional[int] = None,
 ) -> Dict[str, object]:
     """Roll out tokens (physics-biased) and decode a single pause structure."""
     if device is None:
@@ -189,6 +191,8 @@ def predict_pause_structures(
         lr=5e-2,
         device=device,
         progress_cb=progress_cb,
+        ring_spec=ring_spec,
+        ring_emit_every=ring_emit_every,
     )
 
     tri = triplet_from_latent(engine.tok.z)

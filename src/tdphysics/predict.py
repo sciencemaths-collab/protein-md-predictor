@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Callable, List, Dict, Optional
 
 import numpy as np
+import math
 import torch
 
 from .dataset import LevelSpec
@@ -28,22 +29,76 @@ class RolloutConfig:
     greedy: bool = False
 
 
-def greedy_level_schedule(horizon_steps: int, levels: List[LevelSpec]) -> List[int]:
-    order = sorted(range(len(levels)), key=lambda i: levels[i].lag_steps, reverse=True)
+def greedy_level_schedule(
+    horizon_steps: int,
+    levels: List[LevelSpec],
+    *,
+    max_steps: int = 50000,
+    progress_cb: Optional[ProgressCB] = None,
+) -> List[int]:
+    """Build a multi-level rollout plan that covers `horizon_steps`.
+
+    For extremely large horizons (e.g., seconds when the base dt is ns),
+    a naive plan can become millions of steps and overwhelm the app.
+
+    To keep the rollout bounded, we automatically apply a *time-warp* factor:
+      effective_lag = lag_steps * warp
+
+    The model still rolls out the same *level IDs* (no new levels), but each step
+    is interpreted as advancing `warp` times further in physical time. This matches
+    the intended "tokenized long-jump" behavior and prevents schedule blow-ups.
+    """
+    if horizon_steps <= 0:
+        return []
+
+    # Greedy order (largest lag first)
+    order = sorted(range(len(levels)), key=lambda i: int(levels[i].lag_steps), reverse=True)
+
+    # Safety: if horizon is huge, increase warp so even the smallest lag cannot exceed max_steps.
+    min_lag = max(1, min(int(l.lag_steps) for l in levels))
+    # Upper bound steps if we had to use min_lag everywhere: ceil(horizon/min_lag).
+    # We choose warp so that bound / warp <= max_steps.
+    warp = max(1, int(math.ceil((horizon_steps / float(min_lag)) / float(max_steps))))
+
+    if warp > 1:
+        _emit(
+            progress_cb,
+            "predict.schedule_coarsen",
+            p=0.0,
+            warp=int(warp),
+            max_steps=int(max_steps),
+            horizon_steps=int(horizon_steps),
+            min_lag=int(min_lag),
+        )
+
     remaining = int(horizon_steps)
     plan: List[int] = []
-    while remaining > 0:
+
+    # Greedy cover of the horizon using effective lag = lag_steps * warp
+    while remaining > 0 and len(plan) < int(max_steps):
         chosen = None
         for i in order:
-            if levels[i].lag_steps <= remaining:
+            if int(levels[i].lag_steps) * int(warp) <= remaining:
                 chosen = i
                 break
         if chosen is None:
             chosen = order[-1]
-        plan.append(chosen)
-        remaining -= int(levels[chosen].lag_steps)
-        if len(plan) > 200000:
-            raise RuntimeError("Schedule exploded; check lags/horizon.")
+        plan.append(int(chosen))
+        remaining -= int(levels[chosen].lag_steps) * int(warp)
+
+    if remaining > 0:
+        # As a last resort, we didn't fully cover the horizon within max_steps.
+        # We still return the bounded plan (best-effort), but emit a notice.
+        _emit(
+            progress_cb,
+            "predict.schedule_truncated",
+            p=0.0,
+            warp=int(warp),
+            max_steps=int(max_steps),
+            horizon_steps=int(horizon_steps),
+            remaining_steps=int(remaining),
+        )
+
     return plan
 
 
@@ -71,7 +126,7 @@ def rollout_tokens(
     V = model.vocab_size
     E = torch.tensor(token_energy[:V], dtype=torch.float32, device=device)
 
-    plan = greedy_level_schedule(int(horizon_steps), levels)
+    plan = greedy_level_schedule(int(horizon_steps), levels, progress_cb=progress_cb)
     n_steps = len(plan)
 
     seq = list(np.asarray(tokens_seed, dtype=np.int64).tolist())

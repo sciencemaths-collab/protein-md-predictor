@@ -30,6 +30,12 @@ import os
 import tempfile
 import time
 import urllib.request
+
+# Optional: requests provides nicer streaming + progress for huge URL ingests
+try:
+    import requests  # type: ignore
+except Exception:  # pragma: no cover
+    requests = None
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -844,6 +850,209 @@ def _carrier_wave(p: float, n: int = 260, base_freq: float = 6.0) -> List[float]
     return y.astype(np.float32).tolist()
 
 
+
+def render_residue_network_ring(
+    widget_id: str,
+    intensity: float = 0.6,
+    stage: int = 0,
+    size: int = 220,
+    *,
+    nodes: Optional[List[float]] = None,
+    edges_i: Optional[List[int]] = None,
+    edges_j: Optional[List[int]] = None,
+    edges_w: Optional[List[float]] = None,
+) -> None:
+    """Circular residue-network ring (HTML canvas).
+
+    If nodes/edges_* are provided, the glow is *data-driven*:
+      - node glow ~ per-node activity (e.g., sum |Δd| on incident edges)
+      - edge glow ~ per-edge |Δd|
+    Otherwise it falls back to a deterministic "alive" animation.
+    """
+    intensity = max(0.0, min(1.0, float(intensity)))
+    stage = int(stage)
+
+    has_data = (
+        isinstance(nodes, list)
+        and isinstance(edges_i, list)
+        and isinstance(edges_j, list)
+        and isinstance(edges_w, list)
+        and (len(nodes) > 0)
+        and (len(edges_i) == len(edges_j) == len(edges_w))
+    )
+
+    # Keep payload small and safe for HTML embedding
+    nodes_js = json.dumps([float(x) for x in (nodes or [])][:256])
+    ei_js = json.dumps([int(x) for x in (edges_i or [])][:1200])
+    ej_js = json.dumps([int(x) for x in (edges_j or [])][:1200])
+    ew_js = json.dumps([float(x) for x in (edges_w or [])][:1200])
+
+    html = r"""
+<div style="width: __SIZE__px; height: __SIZE__px; margin: 0 auto;">
+  <canvas id="__ID__" width="__SIZE__" height="__SIZE__"
+    style="width: __SIZE__px; height: __SIZE__px; border-radius: 999px;
+           background: radial-gradient(circle at 35% 30%, rgba(255,255,255,0.06), rgba(0,0,0,0) 55%),
+                       rgba(255,255,255,0.04);
+           border: 1px solid rgba(255,255,255,0.10);
+           box-shadow: 0 0 0 1px rgba(255,255,255,0.04) inset;">
+  </canvas>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById("__ID__");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+
+  const W = canvas.width, H = canvas.height;
+  const cx = W/2, cy = H/2;
+
+  const intensity = __INT__;
+  const stage = __STAGE__;
+  const HAS_DATA = __HASDATA__;
+
+  const NODES = __NODES__;
+  const EI = __EI__;
+  const EJ = __EJ__;
+  const EW = __EW__;
+
+  const K = HAS_DATA ? (NODES.length|0) : 64;
+  const R = Math.min(W,H) * 0.36;
+  const jitter = Math.min(W,H) * 0.06;
+
+  // deterministic-ish seed from stage
+  function mulberry32(a){return function(){var t=a+=0x6D2B79F5;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296}}
+  const rand = mulberry32(12345 + stage*999);
+
+  // fixed ring nodes (each corresponds to a residue index in your sampled set)
+  const pts = Array.from({length: K}, (_,i)=>({
+    a0: (i / Math.max(1, K)) * Math.PI*2,
+    phase: rand()*Math.PI*2,
+    drift: (0.15 + rand()*0.55) * (0.35 + intensity*1.4),
+    r: R + (rand()*2-1)*jitter,
+    s: 0.7 + rand()*0.9,
+  }));
+
+  let t0 = performance.now();
+  let rot = 0;
+
+  function hueFor(i){
+    // unique "signature" per node
+    return ( (i * 360 / Math.max(1,K)) + (stage*21) ) % 360;
+  }
+
+  function draw(t){
+    const dt = (t - t0) * 0.001;
+    t0 = t;
+    rot += dt * (0.12 + 0.25*intensity);
+
+    ctx.clearRect(0,0,W,H);
+
+    // soft outer ring
+    ctx.beginPath();
+    ctx.arc(cx,cy,R,0,Math.PI*2);
+    ctx.strokeStyle = `rgba(240,244,255,${0.10 + intensity*0.18})`;
+    ctx.lineWidth = 1.0;
+    ctx.stroke();
+
+    // compute positions + per-node glow
+    const pos = pts.map((p,i)=>{
+      const pulse = 0.55 + 0.45*Math.sin((t*0.002) + p.phase);
+      const rr = p.r * (0.92 + 0.10*pulse*intensity);
+      const a = p.a0 + rot + dt*0.0;
+      const x = cx + Math.cos(a)*rr;
+      const y = cy + Math.sin(a)*rr;
+
+      let g = (0.25 + 0.75*pulse) * (0.25 + intensity);
+      if (HAS_DATA && i < NODES.length){
+        // data-driven activity wins (with a tiny breathing motion)
+        const v = Math.max(0, Math.min(1, NODES[i]));
+        g = (0.12 + 0.88*v) * (0.55 + 0.45*pulse) * (0.35 + 0.90*intensity);
+      }
+      return {x, y, glow: g, pulse};
+    });
+
+    // network edges
+    if (HAS_DATA && EI.length === EJ.length && EI.length === EW.length){
+      for (let k=0; k<EI.length; k++){
+        const i = EI[k]|0, j = EJ[k]|0;
+        if (i<0 || j<0 || i>=K || j>=K) continue;
+        const w = Math.max(0, Math.min(1, EW[k]));
+        if (w <= 1e-4) continue;
+
+        const a = (0.04 + 0.22*intensity) * (0.20 + 0.80*w);
+        const hi = hueFor(i), hj = hueFor(j);
+        const h = (hi + hj) * 0.5;
+
+        ctx.beginPath();
+        ctx.moveTo(pos[i].x, pos[i].y);
+        ctx.lineTo(pos[j].x, pos[j].y);
+        ctx.strokeStyle = `hsla(${h}, 95%, 70%, ${a})`;
+        ctx.lineWidth = 1.0;
+        ctx.stroke();
+      }
+    } else {
+      // fallback faint edges (nearby only)
+      for (let i=0; i<K; i++){
+        for (let j=i+1; j<K; j++){
+          const dx = pos[i].x - pos[j].x;
+          const dy = pos[i].y - pos[j].y;
+          const d2 = dx*dx + dy*dy;
+          if (d2 < (W*W)*0.03){
+            const a = (0.06 + 0.16*intensity) * (1.0 - d2/((W*W)*0.03));
+            ctx.beginPath();
+            ctx.moveTo(pos[i].x, pos[i].y);
+            ctx.lineTo(pos[j].x, pos[j].y);
+            ctx.strokeStyle = `rgba(160,210,255,${a})`;
+            ctx.lineWidth = 1.0;
+            ctx.stroke();
+          }
+        }
+      }
+    }
+
+    // particles (unique light signature per node)
+    for (let i=0; i<K; i++){
+      const g = pos[i].glow;
+      const r = (1.2 + 2.2*pts[i].s) * (0.85 + 0.9*intensity) * (0.55 + 0.85*g);
+      const h = hueFor(i);
+
+      const grad = ctx.createRadialGradient(pos[i].x, pos[i].y, 0, pos[i].x, pos[i].y, r*3.2);
+      grad.addColorStop(0, `hsla(${h}, 95%, 72%, ${0.08 + 0.30*g})`);
+      grad.addColorStop(0.5, `hsla(${(h+160)%360}, 95%, 70%, ${0.06 + 0.22*g})`);
+      grad.addColorStop(1, `rgba(0,0,0,0)`);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(pos[i].x, pos[i].y, r*3.0, 0, Math.PI*2);
+      ctx.fill();
+
+      ctx.fillStyle = `rgba(240,244,255,${0.28 + 0.62*g})`;
+      ctx.beginPath();
+      ctx.arc(pos[i].x, pos[i].y, r, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    requestAnimationFrame(draw);
+  }
+
+  requestAnimationFrame(draw);
+})();
+</script>
+"""
+    html = (
+        html.replace("__ID__", widget_id)
+        .replace("__INT__", f"{intensity:.4f}")
+        .replace("__STAGE__", str(stage))
+        .replace("__SIZE__", str(int(size)))
+        .replace("__HASDATA__", "true" if has_data else "false")
+        .replace("__NODES__", nodes_js)
+        .replace("__EI__", ei_js)
+        .replace("__EJ__", ej_js)
+        .replace("__EW__", ew_js)
+    )
+
+    components.html(html, height=size + 10)
+
 def bus_render(*, container=None) -> None:
     t = st.session_state["telemetry"]
     s = st.session_state["bus_series"]
@@ -867,14 +1076,32 @@ def bus_render(*, container=None) -> None:
         "note": str(t.get("note", "")),
         "wave_y": list(t.get("wave_y", []))[-420:],
         "bars": bars,
+        "ring_nodes": t.get("ring_nodes", []),
+        "ring_ei": t.get("ring_ei", []),
+        "ring_ej": t.get("ring_ej", []),
+        "ring_ew": t.get("ring_ew", []),
     }
+
+    ring_intensity = 0.18 + 0.82 * float(state["p"])
+    ring_stage = int(state["stage_idx"])
+    ring_size = 220
+
+    def _draw() -> None:
+        c1, c2 = st.columns([5, 2], gap="small")
+        with c1:
+            components.html(_neon_banner_html(state), height=255, scrolling=False)
+        with c2:
+            render_residue_network_ring("residue_ring", intensity=ring_intensity, stage=ring_stage, size=ring_size, nodes=state.get("ring_nodes"), edges_i=state.get("ring_ei"), edges_j=state.get("ring_ej"), edges_w=state.get("ring_ew"))
+
     if container is None:
-        components.html(_neon_banner_html(state), height=255, scrolling=False)
+        _draw()
     else:
         # Update inside a placeholder so the banner refreshes during long runs.
         container.empty()
         with container:
-            components.html(_neon_banner_html(state), height=255, scrolling=False)
+            _draw()
+
+
 
 
 def _set_bus(stage_idx: int, p: float, mode: str, wave_y: List[float], note: str) -> None:
@@ -899,6 +1126,16 @@ def make_progress_cb(*, render_hook=None) -> Any:
     def cb(event: str, payload: Optional[dict] = None) -> None:
         payload = payload or {}
         e = str(event)
+        t = st.session_state.get("telemetry", {})
+        # If backend emits ring signals (data-driven residue network), store them for bus_render.
+        if isinstance(payload, dict) and ("ring_nodes" in payload):
+            try:
+                t["ring_nodes"] = payload.get("ring_nodes", t.get("ring_nodes", []))
+                t["ring_ei"] = payload.get("ring_ei", t.get("ring_ei", []))
+                t["ring_ej"] = payload.get("ring_ej", t.get("ring_ej", []))
+                t["ring_ew"] = payload.get("ring_ew", t.get("ring_ew", []))
+            except Exception:
+                pass
         if e.startswith("pipeline."):
             e = e[len("pipeline.") :]
 
@@ -1025,20 +1262,62 @@ def save_uploaded_to_temp(upload: Any, *, fallback_suffix: str) -> str:
     return tmp.name
 
 
-def download_url_to_temp(url: str, *, fallback_suffix: str) -> str:
+def download_url_to_temp(url: str, *, fallback_suffix: str, chunk_mb: int = 8, progress=None) -> str:
+    """Download URL → temp file, streaming to disk (safe for huge inputs).
+
+    Uses requests (if available) for progress via Content-Length; otherwise falls back to urllib.
+    progress: optional callable p in [0, 1]
+    """
     url = (url or "").strip()
     if not url:
         raise RuntimeError("Empty URL")
-    # guess suffix from URL
-    suffix = _suffix_from_name(url.split("?")[0].split("#")[0], fallback_suffix)
+
+    # Guess suffix from URL path (ignoring query/fragment), preserve ext for MDAnalysis
+    clean_name = url.split("?")[0].split("#")[0]
+    suffix = _suffix_from_name(clean_name, fallback_suffix)
+
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-    req = urllib.request.Request(url, headers={"User-Agent": "TDPhysics/1.0"})
-    with urllib.request.urlopen(req) as r:
-        while True:
-            chunk = r.read(1024 * 1024)
-            if not chunk:
-                break
-            tmp.write(chunk)
+    chunk = max(1, int(chunk_mb)) * 1024 * 1024
+
+    def _urllib_download() -> None:
+        req = urllib.request.Request(url, headers={"User-Agent": "TDPhysics/1.0"})
+        with urllib.request.urlopen(req) as r:
+            total = int(getattr(r, "length", 0) or 0)
+            done = 0
+            while True:
+                part = r.read(chunk)
+                if not part:
+                    break
+                tmp.write(part)
+                done += len(part)
+                if progress and total > 0:
+                    progress(min(1.0, done / total))
+
+    if requests is not None:
+        try:
+            headers = {"User-Agent": "TDPhysics/1.0"}
+            with requests.get(url, stream=True, timeout=60, headers=headers) as r:  # type: ignore[attr-defined]
+                r.raise_for_status()
+                total = int(r.headers.get("content-length") or 0)
+                done = 0
+                for part in r.iter_content(chunk_size=chunk):
+                    if not part:
+                        continue
+                    tmp.write(part)
+                    done += len(part)
+                    if progress and total > 0:
+                        progress(min(1.0, done / total))
+        except Exception:
+            # requests can fail for some hosts; fall back to urllib
+            try:
+                tmp.seek(0)
+                tmp.truncate(0)
+            except Exception:
+                pass
+            _urllib_download()
+    else:
+        _urllib_download()
+
     tmp.flush()
     tmp.close()
     return tmp.name
@@ -1047,6 +1326,87 @@ def download_url_to_temp(url: str, *, fallback_suffix: str) -> str:
 # -----------------------------
 # Synthetic demo
 # -----------------------------
+
+
+def build_ring_spec(
+    engine,
+    n_nodes: int = 64,
+    knn: int = 3,
+    cutoff: float = 8.0,
+    max_edges: int = 220,
+) -> dict:
+    """Build a small residue-network spec for the circular ring visual.
+
+    Returns a dict with:
+      - node_idx: absolute residue indices into X (len K)
+      - edges_node: (M,2) endpoints in [0..K-1]
+      - edges_abs: (M,2) endpoints in absolute residue indices
+      - node_resids/node_resnames: metadata for labeling (optional)
+    """
+    X_ref = np.asarray(engine.traj.X[-1], dtype=np.float32)
+    N = int(X_ref.shape[0])
+    n_nodes = int(max(8, min(int(n_nodes), N)))
+    if N <= n_nodes:
+        node_idx = np.arange(N, dtype=int)
+    else:
+        node_idx = np.unique(np.linspace(0, N - 1, n_nodes, dtype=int))
+    K = int(node_idx.shape[0])
+
+    coords = X_ref[node_idx, :]
+    # Pairwise distances among selected nodes (KxK)
+    dif = coords[:, None, :] - coords[None, :, :]
+    D = np.linalg.norm(dif, axis=2).astype(np.float32)
+    np.fill_diagonal(D, np.inf)
+
+    edges = set()
+
+    # kNN edges
+    knn = int(max(1, min(int(knn), K - 1)))
+    for i in range(K):
+        js = np.argsort(D[i])[:knn]
+        for j in js:
+            a, b = (i, int(j))
+            if a == b:
+                continue
+            if a > b:
+                a, b = b, a
+            edges.add((a, b))
+
+    # contact edges under cutoff
+    if float(cutoff) > 0:
+        cut = float(cutoff)
+        ii, jj = np.where(D < cut)
+        for a, b in zip(ii.tolist(), jj.tolist()):
+            a = int(a); b = int(b)
+            if a == b:
+                continue
+            if a > b:
+                a, b = b, a
+            edges.add((a, b))
+
+    edges = sorted(edges)
+    # Cap edges by shortest distances for clarity/perf
+    if len(edges) > int(max_edges):
+        dlist = [(float(D[a, b]), a, b) for (a, b) in edges]
+        dlist.sort(key=lambda x: x[0])
+        edges = [(a, b) for (_, a, b) in dlist[: int(max_edges)]]
+
+    edges_node = np.asarray(edges, dtype=int) if len(edges) > 0 else np.zeros((0, 2), dtype=int)
+    edges_abs = node_idx[edges_node] if edges_node.size else np.zeros((0, 2), dtype=int)
+
+    resids = getattr(engine.traj, "resids", None)
+    resnames = getattr(engine.traj, "resnames", None)
+    node_resids = (np.asarray(resids, dtype=int)[node_idx].tolist() if resids is not None else [])
+    node_resnames = (np.asarray(resnames)[node_idx].tolist() if resnames is not None else [])
+
+    return {
+        "node_idx": node_idx.astype(int).tolist(),
+        "edges_node": edges_node.astype(int).tolist(),
+        "edges_abs": edges_abs.astype(int).tolist(),
+        "node_resids": node_resids,
+        "node_resnames": node_resnames,
+    }
+
 
 def synthetic_demo(progress_cb=None, T: int = 800, N: int = 60, time_unit: str = "ns") -> TrajectoryData:
     if progress_cb:
@@ -1106,8 +1466,19 @@ def build_traj(
     else:
         if not top_url:
             raise RuntimeError("Provide topology URL.")
-        top_path = download_url_to_temp(top_url, fallback_suffix=".pdb")
-        traj_path = download_url_to_temp(traj_url, fallback_suffix=".xtc") if traj_url else None
+
+        chunk_mb = int(st.session_state.get("url_chunk_mb", 8))
+
+        # Stream-download to disk (supports very large files). Progress appears in the sidebar.
+        pb = st.sidebar.progress(0.0)
+        top_path = download_url_to_temp(top_url, fallback_suffix=".pdb", chunk_mb=chunk_mb, progress=pb.progress)
+        pb.empty()
+
+        traj_path = None
+        if traj_url:
+            pb2 = st.sidebar.progress(0.0)
+            traj_path = download_url_to_temp(traj_url, fallback_suffix=".xtc", chunk_mb=chunk_mb, progress=pb2.progress)
+            pb2.empty()
 
     return make_trajectory_data(
         top_path,
@@ -1176,6 +1547,21 @@ with st.sidebar:
     demo = st.checkbox("Use synthetic demo", value=False, help="Runs without uploads. Great for UI/flow checks.")
 
     upload_mode = st.radio("Input mode", ["Upload", "URL"], horizontal=True, disabled=demo)
+    if upload_mode == "URL":
+        st.caption(
+            "URL mode is recommended for very large trajectories. The app streams downloads to disk (not RAM). "
+            "Note: Streamlit Community Cloud still has hard platform limits for uploads and local storage."
+        )
+        st.session_state["url_chunk_mb"] = int(
+            st.slider(
+                "URL download chunk (MB)",
+                min_value=1,
+                max_value=64,
+                value=int(st.session_state.get("url_chunk_mb", 8)),
+                step=1,
+            )
+        )
+
     top_upload = traj_upload = None
     top_url = traj_url = ""
     if not demo:
@@ -1281,6 +1667,23 @@ with st.sidebar:
     st.subheader("Decode")
     decode_steps = int(st.number_input("Decode steps", min_value=50, value=200, step=50))
     r_min = float(st.number_input("Repulsion r_min", value=3.2, step=0.1))
+
+    st.divider()
+    with st.expander("Residue ring (data-driven)", expanded=False):
+        st.caption("Drives the circular ring using residue–residue distance-change signals (|Δd|).")
+        ring_nodes = int(st.number_input("Ring nodes (sampled residues)", min_value=8, value=int(st.session_state.get("ring_nodes", 64)), step=8))
+        ring_knn = int(st.number_input("kNN edges per node", min_value=1, value=int(st.session_state.get("ring_knn", 3)), step=1))
+        ring_cutoff = float(st.number_input("Contact cutoff (Å)", min_value=0.0, value=float(st.session_state.get("ring_cutoff", 8.0)), step=0.5))
+        ring_max_edges = int(st.number_input("Max ring edges", min_value=20, value=int(st.session_state.get("ring_max_edges", 220)), step=20))
+        ring_emit_decode = int(st.number_input("Ring update stride during decode", min_value=1, value=int(st.session_state.get("ring_emit_decode", 5)), step=1))
+        ring_emit_movie = int(st.number_input("Ring update stride during movie frames", min_value=1, value=int(st.session_state.get("ring_emit_movie", 1)), step=1))
+
+        st.session_state["ring_nodes"] = int(ring_nodes)
+        st.session_state["ring_knn"] = int(ring_knn)
+        st.session_state["ring_cutoff"] = float(ring_cutoff)
+        st.session_state["ring_max_edges"] = int(ring_max_edges)
+        st.session_state["ring_emit_decode"] = int(ring_emit_decode)
+        st.session_state["ring_emit_movie"] = int(ring_emit_movie)
 
     st.divider()
     build_btn = st.button("Build + Train engine", type="primary", use_container_width=True)
@@ -1439,6 +1842,7 @@ with tabs[0]:
                     rcfg = RolloutConfig(beta_energy=float(beta), temperature=float(temperature), greedy=bool(greedy))
                     dw = DecodeWeights(r_min=float(r_min))
                     device = _device_string().split(" ")[0]
+                    ring_spec = build_ring_spec(st.session_state["engine"], n_nodes=int(st.session_state.get("ring_nodes", 64)), knn=int(st.session_state.get("ring_knn", 3)), cutoff=float(st.session_state.get("ring_cutoff", 8.0)), max_edges=int(st.session_state.get("ring_max_edges", 220)))
                     st.session_state["last_pred"] = predict_pause_structures(
                         st.session_state["engine"],
                         float(horizon),
@@ -1447,19 +1851,35 @@ with tabs[0]:
                         decode_steps=int(decode_steps),
                         device=device,
                         progress_cb=progress_cb,
+                        ring_spec=ring_spec,
+                        ring_emit_every=int(st.session_state.get("ring_emit_decode", 5)),
                     )
 
-                    # Proof: RMSD vs last frame
+                    # Proof: RMSD vs last frame (robust to rare decode issues)
                     X_last = st.session_state["engine"].traj.X[-1]
-                    X_pred = st.session_state["last_pred"]["X_rec"]
-                    rmsd = float(rmsd_kabsch(X_last, X_pred))
-                    disp = per_site_displacement(X_last, X_pred, align=True).astype(np.float32)
+                    X_pred = st.session_state["last_pred"].get("X_rec")
+                    rmsd = float("nan")
+                    disp = None
+                    try:
+                        if X_pred is not None:
+                            Xp = np.asarray(X_pred, dtype=np.float32)
+                            if np.isfinite(Xp).all():
+                                rmsd = float(rmsd_kabsch(X_last, Xp))
+                                disp = per_site_displacement(X_last, Xp, align=True).astype(np.float32)
+                            else:
+                                log("Warning: predicted coordinates contained non-finite values; RMSD skipped", kind="warn")
+                    except Exception as _e:
+                        log(f"Warning: RMSD computation failed: {_e}", kind="warn")
 
-                    st.session_state["last_pred"]["rmsd"] = rmsd
-                    st.session_state["last_pred"]["disp"] = disp
+                    st.session_state["last_pred"]["rmsd"] = float(rmsd)
+                    if disp is not None:
+                        st.session_state["last_pred"]["disp"] = disp
 
-                    st.session_state["bus_series"]["disp"] = disp.tolist()[-420:]
-                    _set_bus(5, 1.0, "proof", disp.tolist(), f"Proof: RMSD(last→pred) = {rmsd:.3f} Å")
+                    if disp is not None:
+                        st.session_state["bus_series"]["disp"] = disp.tolist()[-420:]
+                        _set_bus(5, 1.0, "proof", disp.tolist(), f"Proof: RMSD(last→pred) = {rmsd:.3f} Å")
+                    else:
+                        _set_bus(5, 1.0, "proof", _carrier_wave(0.15), f"Proof: RMSD unavailable (non-finite decode)")
                     render_top()
                     render_top()
                     log(f"Prediction complete (RMSD={rmsd:.3f})", kind="success")
@@ -1702,6 +2122,7 @@ with tabs[0]:
                     log("Movie export requested")
                     bcfg = BeamConfig(beam_width=int(beam_width), topk=int(topk), work_penalty=float(work_penalty))
                     device = _device_string().split(" ")[0]
+                    ring_spec = build_ring_spec(engine, n_nodes=int(st.session_state.get("ring_nodes", 64)), knn=int(st.session_state.get("ring_knn", 3)), cutoff=float(st.session_state.get("ring_cutoff", 8.0)), max_edges=int(st.session_state.get("ring_max_edges", 220)))
                     movie = predict_future_movie(
                         engine,
                         horizon_time=float(horizon),
@@ -1717,6 +2138,8 @@ with tabs[0]:
                         priors=getattr(engine, "physics_priors", None),
                         device=device,
                         progress_cb=movie_progress_cb,
+                        ring_spec=ring_spec,
+                        ring_emit_every=int(st.session_state.get("ring_emit_movie", 1)),
                     )
                     st.session_state["last_movie"] = movie
 
@@ -1727,6 +2150,9 @@ with tabs[0]:
                     out_movie_pdb = tmp_dir / "future_movie_ca.pdb"
                     export_future_movie_pdb(engine, movie, str(out_movie_pdb))
                     movie_bytes = out_movie_pdb.read_bytes()
+
+                    # Persist movie bytes so the download + plots survive reruns.
+                    st.session_state["last_movie_pdb_bytes"] = movie_bytes
 
                     movie_status.success("Movie ready for download ✔")
                     movie_bar.progress(100)
@@ -1751,6 +2177,32 @@ with tabs[0]:
                     except Exception:
                         pass
                     st.error(str(e))
+
+            # Always show the last movie (if available), even after rerun.
+            if st.session_state.get("last_movie") is not None:
+                try:
+                    movie = st.session_state.get("last_movie")
+                    ent = movie["rollout"]["entropies"].astype(np.float32).tolist()
+                    if len(ent) > 0:
+                        pchart(neon_wave_preview(ent, stage_idx=3, title="Movie rollout entropy (last run)"), use_container_width=True)
+
+                    movie_bytes = st.session_state.get("last_movie_pdb_bytes")
+                    if movie_bytes is None:
+                        tmp_dir = Path(tempfile.gettempdir())
+                        out_movie_pdb = tmp_dir / "future_movie_ca.pdb"
+                        export_future_movie_pdb(engine, movie, str(out_movie_pdb))
+                        movie_bytes = out_movie_pdb.read_bytes()
+                        st.session_state["last_movie_pdb_bytes"] = movie_bytes
+
+                    st.download_button(
+                        "Download last movie (CA-only multi-model PDB)",
+                        data=movie_bytes,
+                        file_name="future_movie_ca.pdb",
+                        mime="chemical/x-pdb",
+                        use_container_width=True,
+                    )
+                except Exception:
+                    st.info("Movie exists in memory, but preview/export failed in this environment. Try regenerating.")
 
 
 # -----------------------------

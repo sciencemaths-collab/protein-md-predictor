@@ -292,6 +292,11 @@ def decode_physicsplus(
     X0 = torch.tensor(np.asarray(X_init, dtype=np.float32), device=device_t)
     X = X0.clone().detach().requires_grad_(True)
 
+    # Guardrails: keep a best-known finite solution so long-horizon decodes
+    # don't poison downstream RMSD/movie export with NaNs.
+    best_loss = float("inf")
+    X_best = X0.clone().detach()
+
     d_tar = torch.tensor(np.asarray(d_target, dtype=np.float32), device=device_t)
     k = torch.tensor(np.asarray(pri.k, dtype=np.float32), device=device_t)
     d0 = torch.tensor(np.asarray(pri.d0, dtype=np.float32), device=device_t)
@@ -341,9 +346,24 @@ def decode_physicsplus(
             + float(w_plus.w_sticky) * sticky_pen
         )
 
+        # If the objective or coordinates become non-finite, abort and return
+        # the best-known finite iterate.
+        if (not torch.isfinite(loss)) or (not torch.isfinite(X).all()):
+            _emit(progress_cb, "decode.abort", p=si / float(max(1, steps)), step=si, steps=steps, reason="non_finite")
+            break
+
         loss.backward()
         torch.nn.utils.clip_grad_norm_([X], 10.0)
         opt.step()
+
+        # Track best finite iterate.
+        try:
+            cur_loss = float(loss.item())
+            if np.isfinite(cur_loss) and cur_loss < best_loss and torch.isfinite(X).all():
+                best_loss = cur_loss
+                X_best = X.detach().clone()
+        except Exception:
+            pass
 
         if (si == 1) or (si == steps) or (si % report_every == 0):
             _emit(
@@ -362,7 +382,14 @@ def decode_physicsplus(
             )
 
     _emit(progress_cb, "decode.done", p=1.0, steps=steps, mode="physicsplus")
-    return X.detach().cpu().numpy()
+    # Return best known finite structure (falls back to init if needed).
+    try:
+        out = X_best.detach().cpu().numpy()
+        if np.isfinite(out).all():
+            return out
+    except Exception:
+        pass
+    return X0.detach().cpu().numpy()
 
 
 def write_multimodel_ca_pdb(
@@ -418,6 +445,8 @@ def predict_future_movie(
     decode_physics: bool = True,
     priors: Optional[PhysicsPriors] = None,
     device: Optional[str] = None,
+    ring_spec: Optional[dict] = None,
+    ring_emit_every: int = 1,
     progress_cb: Optional[ProgressCB] = None,
 ) -> Dict[str, object]:
     """Predict a future trajectory and decode multiple frames (a "movie").
@@ -432,6 +461,71 @@ def predict_future_movie(
     horizon_steps = max(1, int(round(float(horizon_time) / float(engine.traj.dt))))
     context = int(engine.train_cfg.context)
     seed_tokens = engine.tok.tokens[-context:]
+
+    # Optional residue-network ring spec (small subset of residues + edges),
+    # used to emit live "interaction-change" signals for the UI.
+    _ring = ring_spec or None
+    _ring_node_idx = None
+    _ring_edges_abs = None
+    _ring_edges_node = None
+    if isinstance(_ring, dict):
+        try:
+            _ring_node_idx = np.asarray(_ring.get("node_idx", None), dtype=int) if _ring.get("node_idx", None) is not None else None
+            _ring_edges_abs = np.asarray(_ring.get("edges_abs", None), dtype=int) if _ring.get("edges_abs", None) is not None else None
+            _ring_edges_node = np.asarray(_ring.get("edges_node", None), dtype=int) if _ring.get("edges_node", None) is not None else None
+        except Exception:
+            _ring_node_idx = None
+            _ring_edges_abs = None
+            _ring_edges_node = None
+
+    def _ring_payload(X_cur: np.ndarray, X_prev: Optional[np.ndarray]) -> Optional[dict]:
+        if _ring_node_idx is None or _ring_edges_abs is None or _ring_edges_node is None:
+            return None
+        try:
+            ea = _ring_edges_abs
+            en = _ring_edges_node
+            # distances along ring edges
+            v1 = X_cur[ea[:, 0], :] - X_cur[ea[:, 1], :]
+            d1 = np.linalg.norm(v1, axis=1)
+            if X_prev is None:
+                dw = np.zeros_like(d1)
+            else:
+                v0 = X_prev[ea[:, 0], :] - X_prev[ea[:, 1], :]
+                d0 = np.linalg.norm(v0, axis=1)
+                dw = np.abs(d1 - d0)
+
+            # node activity = incident edge delta-sum
+            K = int(_ring_node_idx.shape[0])
+            node = np.zeros((K,), dtype=np.float32)
+            # en endpoints are in [0..K-1]
+            np.add.at(node, en[:, 0], dw.astype(np.float32))
+            np.add.at(node, en[:, 1], dw.astype(np.float32))
+
+            # robust normalize (avoid flicker on single spikes)
+            eps = 1e-9
+            if dw.size > 0:
+                q = float(np.percentile(dw, 95)) + eps
+                dw_n = np.clip(dw / q, 0.0, 1.0).astype(np.float32)
+            else:
+                dw_n = dw.astype(np.float32)
+            if node.size > 0:
+                qn = float(np.percentile(node, 95)) + eps
+                node_n = np.clip(node / qn, 0.0, 1.0).astype(np.float32)
+            else:
+                node_n = node.astype(np.float32)
+
+            return {
+                "ring_nodes": node_n.tolist(),
+                "ring_ei": en[:, 0].astype(int).tolist(),
+                "ring_ej": en[:, 1].astype(int).tolist(),
+                "ring_ew": dw_n.tolist(),
+            }
+        except Exception:
+            return None
+
+    # Reference for |Δd| emission across decoded frames
+    X_prev_ring = engine.traj.X[-1].copy()
+
 
     # Rollout
     if use_beam and (not greedy):
@@ -515,7 +609,13 @@ def predict_future_movie(
         tokens_used.append(tok_id)
         X_init = X_rec  # chained init for continuity
 
-        _emit(progress_cb, "movie.frame", p=fi / float(max(1, len(idxs))), frame=fi, n_frames=len(idxs), token=tok_id)
+        rp = _ring_payload(X_rec, X_prev_ring)
+        if (rp is not None) and (int(ring_emit_every) > 0) and ((fi % int(ring_emit_every)) == 0):
+            _emit(progress_cb, "movie.frame", p=fi / float(max(1, len(idxs))), frame=fi, n_frames=len(idxs), token=tok_id, **rp)
+        else:
+            _emit(progress_cb, "movie.frame", p=fi / float(max(1, len(idxs))), frame=fi, n_frames=len(idxs), token=tok_id)
+
+        X_prev_ring = X_rec
 
     _emit(progress_cb, "movie.done", p=1.0, n_frames=int(len(idxs)))
 
