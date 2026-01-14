@@ -3,6 +3,8 @@
 
 **Live App:** https://protein-moleculardynamics-predictor.streamlit.app
 
+## Keywords
+molecular dynamics, protein simulation, trajectory prediction, structure forecasting, physics-informed machine learning, tokenized dynamics, Streamlit
 
 **Release:** v1.0.3 – fix 
 
