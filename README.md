@@ -1,6 +1,10 @@
 # Protein Molecular Dynamics Predictor (v1)
 
-**Release:** v1.0.3 – fixes 
+
+**Live App:** https://protein-moleculardynamics-predictor.streamlit.app
+
+
+**Release:** v1.0.3 – fix 
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sciencemaths-collab/protein-md-predictor/blob/main/notebooks/Run_on_Google_Colab.ipynb)
 
