@@ -1,4 +1,4 @@
-# Protein MD Predictor (v1)
+# Protein Molecular Dynamics Predictor (v1)
 
 **Release:** v1.0.3 – fixes 
 
