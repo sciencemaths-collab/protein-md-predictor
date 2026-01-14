@@ -379,9 +379,82 @@ div[data-testid="stCheckbox"] label{
   color: rgba(240,244,255,0.90) !important;
 }
 
-input::placeholder, textarea::placeholder{
-  color: rgba(240,244,255,0.45) !important;
+
+
+
+/* BaseWeb surfaces (Streamlit inputs/selects): HARD force dark + readable text */
+section[data-testid="stSidebar"] div[data-baseweb="base-input"],
+section[data-testid="stSidebar"] div[data-baseweb="input"],
+section[data-testid="stSidebar"] div[data-baseweb="select"],
+section[data-testid="stSidebar"] div[data-baseweb="textarea"],
+/* fallback (some Streamlit builds place widgets outside sidebar wrappers) */
+div[data-baseweb="base-input"],
+div[data-baseweb="input"],
+div[data-baseweb="select"],
+div[data-baseweb="textarea"]{
+  background-color: transparent !important;
 }
+
+section[data-testid="stSidebar"] div[data-baseweb="base-input"] > div,
+section[data-testid="stSidebar"] div[data-baseweb="base-input"] > div > div,
+section[data-testid="stSidebar"] div[data-baseweb="input"] > div,
+section[data-testid="stSidebar"] div[data-baseweb="input"] > div > div,
+section[data-testid="stSidebar"] div[data-baseweb="select"] > div,
+section[data-testid="stSidebar"] div[data-baseweb="select"] > div > div,
+section[data-testid="stSidebar"] div[data-baseweb="textarea"] > div,
+section[data-testid="stSidebar"] div[data-baseweb="textarea"] > div > div,
+div[data-baseweb="base-input"] > div,
+div[data-baseweb="base-input"] > div > div,
+div[data-baseweb="input"] > div,
+div[data-baseweb="input"] > div > div,
+div[data-baseweb="select"] > div,
+div[data-baseweb="select"] > div > div,
+div[data-baseweb="textarea"] > div,
+div[data-baseweb="textarea"] > div > div{
+  background-color: rgba(255,255,255,0.06) !important;
+  border: 1px solid rgba(255,255,255,0.14) !important;
+  border-radius: 12px !important;
+}
+
+/* Actual input text (Safari needs -webkit-text-fill-color) */
+section[data-testid="stSidebar"] input,
+section[data-testid="stSidebar"] textarea,
+input, textarea{
+  color: rgba(240,244,255,0.95) !important;
+  -webkit-text-fill-color: rgba(240,244,255,0.95) !important;
+  caret-color: rgba(240,244,255,0.95) !important;
+}
+
+/* Selectbox visible value + arrow */
+section[data-testid="stSidebar"] div[data-baseweb="select"] span,
+section[data-testid="stSidebar"] div[data-baseweb="select"] input,
+div[data-baseweb="select"] span,
+div[data-baseweb="select"] input{
+  color: rgba(240,244,255,0.95) !important;
+  -webkit-text-fill-color: rgba(240,244,255,0.95) !important;
+}
+section[data-testid="stSidebar"] div[data-baseweb="select"] svg,
+div[data-baseweb="select"] svg{
+  color: rgba(240,244,255,0.85) !important;
+  fill: rgba(240,244,255,0.85) !important;
+}
+
+/* NumberInput steppers */
+div[data-testid="stNumberInput"] button{
+  background-color: rgba(255,255,255,0.06) !important;
+  border: 1px solid rgba(255,255,255,0.14) !important;
+}
+div[data-testid="stNumberInput"] button svg{
+  color: rgba(240,244,255,0.85) !important;
+  fill: rgba(240,244,255,0.85) !important;
+}
+
+/* Placeholder readability */
+input::placeholder, textarea::placeholder{
+  color: rgba(240,244,255,0.50) !important;
+  -webkit-text-fill-color: rgba(240,244,255,0.50) !important;
+}
+
 
 </style>"""
     css = css.replace("__RM__", rm)

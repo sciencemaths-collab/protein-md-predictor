@@ -1,8 +1,10 @@
 # Protein MD Predictor (v1)
 
-**Release:** v1.0.2 (hotfix) – fixes CSS injection + Colab tunnel reliability.
+**Release:** v1.0.3 – fixes sidebar widget readability (dark inputs/selects) + retains Colab reliability fixes.
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sciencemaths-collab/protein-md-predictor/blob/main/notebooks/Run_on_Google_Colab.ipynb)
+
+> **Note:** Colab demo links are temporary. The public URL is alive only while the Colab runtime is running.
 
 **Protein MD Predictor** is a Streamlit app for **molecular dynamics / structure prediction** using a **physics-guided tokenized dynamics** pipeline.
 
