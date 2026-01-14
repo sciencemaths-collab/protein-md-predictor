@@ -207,11 +207,10 @@ def _device_string() -> str:
 # -----------------------------
 
 def inject_css(reduced_motion: bool = False) -> None:
+    """Inject the global CSS theme. Uses a placeholder to avoid f-string brace issues."""
     rm = "none" if reduced_motion else "pulse 1.3s ease-in-out infinite"
-    st.markdown(
-        f"""
-<style>
-:root{{
+    css = r"""<style>
+:root{
   --bg0: #0b0f14;
   --bg1: rgba(15,18,24,0.86);
   --card: rgba(255,255,255,0.06);
@@ -223,9 +222,9 @@ def inject_css(reduced_motion: bool = False) -> None:
   --a: rgba(255,85,115,1);
   --b: rgba(255,119,199,1);
   --g: rgba(137,255,171,1);
-}}
+}
 
-html, body, [data-testid="stAppViewContainer"] {{
+html, body, [data-testid="stAppViewContainer"] {
   background:
     radial-gradient(1200px 600px at 50% 10%, rgba(120,90,255,0.22), transparent 55%),
     radial-gradient(1000px 700px at 80% 30%, rgba(255,120,200,0.16), transparent 60%),
@@ -234,91 +233,91 @@ html, body, [data-testid="stAppViewContainer"] {{
     repeating-linear-gradient(0deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, rgba(0,0,0,0) 1px, rgba(0,0,0,0) 42px),
     repeating-linear-gradient(90deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, rgba(0,0,0,0) 1px, rgba(0,0,0,0) 42px);
   color: var(--txt);
-}}
+}
 
-.block-container {{ padding-top: 1.0rem; padding-bottom: 2.0rem; }}
+.block-container { padding-top: 1.0rem; padding-bottom: 2.0rem; }
 
 /* hide Streamlit chrome */
-header {{visibility: hidden;}}
-footer {{visibility: hidden;}}
-#MainMenu {{visibility: hidden;}}
+header {visibility: hidden;}
+footer {visibility: hidden;}
+#MainMenu {visibility: hidden;}
 
 /* cards */
-.tdp-card{{
+.tdp-card{
   background: var(--card);
   border: 1px solid var(--stroke);
   border-radius: 18px;
   padding: 14px 14px;
   box-shadow: 0 12px 36px rgba(0,0,0,0.35);
   backdrop-filter: blur(10px);
-}}
-.tdp-card-strong{{
+}
+.tdp-card-strong{
   background: var(--card2);
   border: 1px solid var(--stroke2);
   border-radius: 18px;
   padding: 18px 18px;
   box-shadow: 0 16px 44px rgba(0,0,0,0.42);
   backdrop-filter: blur(12px);
-}}
+}
 
 /* hover glow */
-.tdp-card:hover, .tdp-card-strong:hover{{
+.tdp-card:hover, .tdp-card-strong:hover{
   border-color: rgba(255,255,255,0.20);
   box-shadow: 0 18px 58px rgba(0,0,0,0.55);
-}}
+}
 
 /* stage dot (idle / done / active) */
-.dot{{
+.dot{
   width:14px; height:14px;
   border-radius:50%; display:inline-block;
   background: rgba(255,255,255,0.22);
   border: 1px solid rgba(255,255,255,0.20);
   box-shadow: 0 0 0 rgba(0,0,0,0);
-}}
-.dot.dot-done{{
+}
+.dot.dot-done{
   background: var(--g);
   border-color: rgba(137,255,171,0.40);
   box-shadow: 0 0 12px rgba(137,255,171,0.55), 0 0 30px rgba(137,255,171,0.16);
-}}
-.dot.dot-active{{
+}
+.dot.dot-active{
   background: var(--a);
   border-color: rgba(255,85,115,0.55);
   box-shadow: 0 0 12px rgba(255,85,115,0.85), 0 0 30px rgba(255,85,115,0.18);
-  animation: {rm};
-}}
-@keyframes pulse {{ 0%{{ transform: scale(1.0); opacity: .85; }} 50%{{ transform: scale(1.25); opacity: 1.0; }} 100%{{ transform: scale(1.0); opacity: .85; }} }}
+  animation: __RM__;
+}
+@keyframes pulse { 0%{ transform: scale(1.0); opacity: .85; } 50%{ transform: scale(1.25); opacity: 1.0; } 100%{ transform: scale(1.0); opacity: .85; } }
 
 
 /* pipeline step cards */
-.tdp-step{{ position: relative; overflow: hidden; }}
-.tdp-step.tdp-step-done::before{{ content: ""; position: absolute; inset: 0;
+.tdp-step{ position: relative; overflow: hidden; }
+.tdp-step.tdp-step-done::before{ content: ""; position: absolute; inset: 0;
   background: radial-gradient(circle at 20% 0%, rgba(137,255,171,0.22), transparent 62%);
-  opacity: 0.45; pointer-events: none; }}
-.tdp-step.tdp-step-active::before{{ content: ""; position: absolute; inset: 0;
+  opacity: 0.45; pointer-events: none; }
+.tdp-step.tdp-step-active::before{ content: ""; position: absolute; inset: 0;
   background: radial-gradient(circle at 25% 0%, rgba(255,85,115,0.20), transparent 64%);
-  opacity: 0.45; pointer-events: none; }}
-.tdp-step.tdp-step-done{{ box-shadow: 0 0 22px rgba(137,255,171,0.12); }}
-.tdp-step.tdp-step-active{{ box-shadow: 0 0 22px rgba(255,85,115,0.12); }}
+  opacity: 0.45; pointer-events: none; }
+.tdp-step.tdp-step-done{ box-shadow: 0 0 22px rgba(137,255,171,0.12); }
+.tdp-step.tdp-step-active{ box-shadow: 0 0 22px rgba(255,85,115,0.12); }
 
 /* subtle checkmark (completed stages only) */
-.tdp-chk{{ margin-left: auto; font-size: 14px; font-weight: 900;
+.tdp-chk{ margin-left: auto; font-size: 14px; font-weight: 900;
   color: rgba(137,255,171,0.92);
   opacity: 0; transform: scale(0.92);
   transition: opacity .18s ease, transform .18s ease;
   filter: drop-shadow(0 0 10px rgba(137,255,171,0.22));
-}}
-.tdp-chk.show{{ opacity: 0.95; transform: scale(1.0); }}
+}
+.tdp-chk.show{ opacity: 0.95; transform: scale(1.0); }
 
 /* sidebar */
-[data-testid="stSidebar"] {{ background: rgba(11,12,26,0.92); border-right: 1px solid rgba(255,255,255,0.08); }}
-[data-testid="stSidebar"] * {{ color: var(--txt); }}
+[data-testid="stSidebar"] { background: rgba(11,12,26,0.92); border-right: 1px solid rgba(255,255,255,0.08); }
+[data-testid="stSidebar"] * { color: var(--txt); }
 
 /* tabs */
-.stTabs [data-baseweb="tab-list"] {{ gap: 12px; border-bottom: 1px solid rgba(255,255,255,0.10); }}
-.stTabs [data-baseweb="tab"] {{ background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-bottom: none; border-radius: 12px 12px 0 0; padding: 10px 14px; }}
+.stTabs [data-baseweb="tab-list"] { gap: 12px; border-bottom: 1px solid rgba(255,255,255,0.10); }
+.stTabs [data-baseweb="tab"] { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-bottom: none; border-radius: 12px 12px 0 0; padding: 10px 14px; }
 
 /* hero */
-.tdp-nav{{
+.tdp-nav{
   position: sticky; top: 0; z-index: 99;
   display:flex; align-items:center; justify-content:space-between;
   padding: 10px 14px; margin: 6px 0 16px 0;
@@ -326,14 +325,14 @@ footer {{visibility: hidden;}}
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: 14px;
   backdrop-filter: blur(10px);
-}}
-.tdp-nav .brand{{ font-weight: 800; letter-spacing: .6px; color: rgba(255,255,255,0.92); }}
-.tdp-nav .links{{ display:flex; gap:18px; align-items:center; }}
-.tdp-nav .link{{ color: rgba(255,255,255,0.65); font-weight:700; font-size: 14px; }}
-.tdp-nav .link.active{{ color: rgba(255,255,255,0.92); }}
-.tdp-hero .kicker{{ color: rgba(255,255,255,0.72); font-weight: 800; letter-spacing: .6px; font-size: 12px; text-transform: uppercase; }}
-.tdp-hero .headline{{ font-size: 44px; font-weight: 900; line-height: 1.05; color: rgba(255,255,255,0.95); margin-top: 6px; }}
-.tdp-hero .subhead{{ margin-top: 10px; max-width: 980px; color: rgba(255,255,255,0.72); font-size: 16px; line-height: 1.45; }}
+}
+.tdp-nav .brand{ font-weight: 800; letter-spacing: .6px; color: rgba(255,255,255,0.92); }
+.tdp-nav .links{ display:flex; gap:18px; align-items:center; }
+.tdp-nav .link{ color: rgba(255,255,255,0.65); font-weight:700; font-size: 14px; }
+.tdp-nav .link.active{ color: rgba(255,255,255,0.92); }
+.tdp-hero .kicker{ color: rgba(255,255,255,0.72); font-weight: 800; letter-spacing: .6px; font-size: 12px; text-transform: uppercase; }
+.tdp-hero .headline{ font-size: 44px; font-weight: 900; line-height: 1.05; color: rgba(255,255,255,0.95); margin-top: 6px; }
+.tdp-hero .subhead{ margin-top: 10px; max-width: 980px; color: rgba(255,255,255,0.72); font-size: 16px; line-height: 1.45; }
 
 
 /* ===== Widget readability overrides (fix white uploader / inputs) ===== */
@@ -384,10 +383,11 @@ input::placeholder, textarea::placeholder{
   color: rgba(240,244,255,0.45) !important;
 }
 
-</style>
-""",
-        unsafe_allow_html=True,
-    )
+</style>"""
+    css = css.replace("__RM__", rm)
+    st.markdown(css, unsafe_allow_html=True)
+
+
 
 
 inject_css(bool(st.session_state.get("reduced_motion", False)))

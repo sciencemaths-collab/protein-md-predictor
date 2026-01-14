@@ -1,6 +1,6 @@
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sciencemaths-collab/protein-md-predictor/blob/main/notebooks/Run_on_Google_Colab.ipynb)
-
 # Protein MD Predictor (v1)
+
+**Release:** v1.0.2 (hotfix) – fixes CSS injection + Colab tunnel reliability.
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sciencemaths-collab/protein-md-predictor/blob/main/notebooks/Run_on_Google_Colab.ipynb)
 
