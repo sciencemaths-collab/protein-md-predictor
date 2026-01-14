@@ -1,3 +1,5 @@
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sciencemaths-collab/protein-md-predictor/blob/main/notebooks/Run_on_Google_Colab.ipynb)
+
 # Protein MD Predictor (v1)
 
 **Protein MD Predictor** is a Streamlit app for **molecular dynamics and structure prediction** using a **physics-guided tokenized dynamics** pipeline.
