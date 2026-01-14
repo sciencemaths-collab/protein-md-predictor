@@ -2,17 +2,20 @@
 
 # Protein MD Predictor (v1)
 
-**Protein MD Predictor** is a Streamlit app for **molecular dynamics and structure prediction** using a **physics-guided tokenized dynamics** pipeline.
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sciencemaths-collab/protein-md-predictor/blob/main/notebooks/Run_on_Google_Colab.ipynb)
 
-This is the **first public rollout (v1)**. Expect frequent updates, improvements, and new capabilities. Use it, stress-test it, and have fun with it.
+**Protein MD Predictor** is a Streamlit app for **molecular dynamics / structure prediction** using a **physics-guided tokenized dynamics** pipeline.
+
+This is the **first public rollout (v1)**. Expect frequent updates, refinements, and new capabilities. Use it, stress-test it, and have fun with it.
 
 ## What it does
 - Upload a topology + trajectory (or use a synthetic demo).
-- Build a compact token representation of motion.
-- Train a forecasting engine.
+- Extract invariant motion features (distances / signals).
+- Tokenize the trajectory (PCA + vector quantization codebook).
+- Train a forecasting engine with physics-shaped losses.
 - Predict forward to a user-defined horizon.
-- Decode predictions under geometric/physics constraints.
-- Export a **multi-model PDB** for "future movie" playback in PyMOL/VMD/Chimera.
+- Decode predictions under geometric / physics constraints.
+- Export a **multi-model PDB** for “future movie” playback in PyMOL / VMD / ChimeraX.
 
 ## Quick start (local)
 
@@ -31,44 +34,31 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Open the local URL Streamlit prints in your terminal.
-
-## How to use (straight to the point)
-1. In the sidebar, choose **Upload** (or **URL** if you host files elsewhere).
-2. Provide **Topology** (e.g., PDB/GRO/PSF) and **Trajectory** (e.g., XTC/DCD).
-3. Click **Build + Train engine**.
-4. Set prediction horizon and click **Predict**.
-5. Optional: open **Future movie export** and generate a multi-model PDB.
-
-Notes:
-- For large files, the app streams uploads to disk to avoid memory spikes.
-- Hosting providers may still impose their own upload/runtime limits.
+Then open the URL shown in your terminal.
 
 ## Quick start (Google Colab)
+- Open the notebook: `notebooks/Run_on_Google_Colab.ipynb`
+- Run all cells
+- Colab will print a **public URL** you can click to open the Streamlit app.
 
-You can run the app in a hosted notebook session (no local install) and get a temporary public URL.
+**Tip:** Colab is best for demos and smaller uploads. For heavy workloads or very large trajectories, run locally or deploy on a dedicated server.
 
-- Open: `notebooks/Run_on_Google_Colab.ipynb`
-- Click **Runtime → Run all**
-- The notebook prints a **Public URL** (trycloudflare). Open it to use the app.
+## Deploy options
 
-**Tip:** Colab is best for demos and smaller uploads. For heavy workloads, run locally or deploy on a dedicated server.
+### Streamlit Community Cloud
+1. Push this repo to GitHub
+2. Streamlit Cloud → “New app”
+3. Select repo + branch
+4. Main file: `app.py`
 
-## Deploy (GitHub → Streamlit Cloud)
-1. Create a GitHub repo and push this project.
-2. On Streamlit Community Cloud, create a new app and set:
-   - **Main file**: `app.py`
-   - **Python**: 3.11+
-   - **Requirements**: `requirements.txt`
+**Note:** Streamlit Cloud has tighter upload limits than a local run. For large inputs, use local/server deployment.
 
-## Deploy (Hugging Face Spaces)
-1. Create a new Space (SDK: **Streamlit**).
-2. Upload/push repo contents.
-3. Ensure `app.py` and `requirements.txt` are in the Space root.
+### Hugging Face Spaces
+Create a Space with **Streamlit** SDK and point it to this repo. Spaces are great for discovery and sharing.
+
+## Repo hygiene (important)
+Do **not** commit large trajectories to GitHub. This repo’s `.gitignore` excludes common MD binaries (`*.xtc`, `*.trr`, `*.dcd`, etc.).
 
 ## Contact
 - Email: **bessuman.academia@gmail.com**
-- Web: **www.proteinsimulationconsulting.com**
-
-## License
-MIT (see `LICENSE`).
+- Website: **www.proteinsimulationconsulting.com**

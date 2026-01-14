@@ -335,6 +335,55 @@ footer {{visibility: hidden;}}
 .tdp-hero .headline{{ font-size: 44px; font-weight: 900; line-height: 1.05; color: rgba(255,255,255,0.95); margin-top: 6px; }}
 .tdp-hero .subhead{{ margin-top: 10px; max-width: 980px; color: rgba(255,255,255,0.72); font-size: 16px; line-height: 1.45; }}
 
+
+/* ===== Widget readability overrides (fix white uploader / inputs) ===== */
+section[data-testid="stSidebar"]{
+  background: linear-gradient(180deg, rgba(8,10,24,0.98), rgba(6,7,18,0.98)) !important;
+  border-right: 1px solid rgba(255,255,255,0.06) !important;
+}
+
+div[data-testid="stFileUploader"] section{
+  background: rgba(255,255,255,0.06) !important;
+  border: 1px solid rgba(255,255,255,0.12) !important;
+  border-radius: 14px !important;
+}
+div[data-testid="stFileUploader"] *{
+  color: rgba(240,244,255,0.90) !important;
+}
+div[data-testid="stFileUploader"] button{
+  background: rgba(255,255,255,0.08) !important;
+  border: 1px solid rgba(255,255,255,0.14) !important;
+  color: rgba(240,244,255,0.92) !important;
+  border-radius: 12px !important;
+}
+
+div[data-testid="stNumberInput"] input,
+div[data-testid="stTextInput"] input,
+div[data-testid="stTextArea"] textarea{
+  background: rgba(255,255,255,0.06) !important;
+  color: rgba(240,244,255,0.92) !important;
+  border: 1px solid rgba(255,255,255,0.12) !important;
+  border-radius: 12px !important;
+}
+
+div[data-testid="stSelectbox"] div[role="combobox"]{
+  background: rgba(255,255,255,0.06) !important;
+  border: 1px solid rgba(255,255,255,0.12) !important;
+  border-radius: 12px !important;
+}
+div[data-testid="stSelectbox"] *{
+  color: rgba(240,244,255,0.92) !important;
+}
+
+div[data-testid="stRadio"] label,
+div[data-testid="stCheckbox"] label{
+  color: rgba(240,244,255,0.90) !important;
+}
+
+input::placeholder, textarea::placeholder{
+  color: rgba(240,244,255,0.45) !important;
+}
+
 </style>
 """,
         unsafe_allow_html=True,
