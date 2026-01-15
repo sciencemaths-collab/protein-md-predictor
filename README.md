@@ -1,12 +1,6 @@
-# Protein Molecular Dynamics Predictor (v1)
+# Protein MD Predictor (v1)
 
-
-**Live App:** https://protein-moleculardynamics-predictor.streamlit.app
-
-## Keywords
-molecular dynamics, protein simulation, trajectory prediction, structure forecasting, physics-informed machine learning, tokenized dynamics, Streamlit
-
-**Release:** v1.0.3 – fix 
+**Release:** v1.0.3 – fixes sidebar widget readability (dark inputs/selects) + retains Colab reliability fixes.
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/sciencemaths-collab/protein-md-predictor/blob/main/notebooks/Run_on_Google_Colab.ipynb)
 
